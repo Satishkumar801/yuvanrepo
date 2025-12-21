@@ -1,0 +1,106 @@
+name: infra-pipeline
+
+trigger: none
+
+pool: Default
+
+variables:
+  def_path: $(System.DefaultWorkingDirectory)/environment/dev
+
+stages:
+  - stage: initValidatePlan
+    displayName: Init, Validate and Plan
+    jobs:
+      - job: initValidatePlanJob
+        displayName: Init Validate Plan Job
+        steps:
+        - task: TerraformTask@5
+          displayName: Terraform Init
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            workingDirectory: '$(def_path)'
+            backendServiceArm: 'wif-connect'
+            backendAzureRmStorageAccountName: '1week'
+            backendAzureRmContainerName: 'tondu'
+            backendAzureRmKey: 'infra.tfstate'
+
+        - task: TerraformTask@5
+          displayName: Terraform Validate
+          inputs:
+            provider: 'azurerm'
+            command: 'validate'
+            workingDirectory: '$(def_path)'
+
+        - task: TerraformTask@5
+          displayName: Terraform Plan
+          inputs:
+            provider: 'azurerm'
+            command: 'plan'
+            workingDirectory: '$(def_path)'
+            environmentServiceNameAzureRM: 'wif-connect'
+
+  - stage: securityScan
+    displayName: Security Scan
+    jobs:
+      - job: tfsec
+        displayName: tfsec
+        steps:
+        - task: tfsec@1
+          displayName: tfsec
+          inputs:
+            version: 'v1.26.0'
+            publishTestResults: false
+            dir: '$(System.DefaultWorkingDirectory)'
+      
+      - job: tflint
+        displayName: tflint
+        steps:
+        - task: CmdLine@2
+          continueOnError: true
+          displayName: tflint
+          inputs:
+            script: 'tflint --recursive /f junit > tflint-out.xml'
+            workingDirectory: '$(System.DefaultWorkingDirectory)'
+
+        - task: PublishTestResults@2
+          displayName: tflint result publish
+          inputs:
+            testResultsFormat: 'JUnit'
+            testResultsFiles: 'tflint-out.xml'
+            testRunTitle: 'tflint'
+
+  - stage: approvalAndApply
+    displayName: Approval and Apply
+    jobs:
+      - job: approval
+        pool: server
+        displayName: approval
+        steps:
+        - task: ManualValidation@1
+          displayName: Approval
+          inputs:
+            notifyUsers: 'achinta.dutta04@gmail.com'
+            approvers: 'achinta.dutta04@gmail.com'
+        
+      - job: apply
+        dependsOn: approval
+        displayName: Terraform Apply
+        steps:
+        - task: TerraformTask@5
+          displayName: Terraform Init
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            workingDirectory: '$(def_path)'
+            backendServiceArm: 'wif-connect'
+            backendAzureRmStorageAccountName: '1week'
+            backendAzureRmContainerName: 'tondu'
+            backendAzureRmKey: 'infra.tfstate'
+        - task: TerraformTask@5
+          displayName: Terraform Apply
+          inputs:
+            provider: 'azurerm'
+            command: 'apply'
+            workingDirectory: '$(def_path)'
+            environmentServiceNameAzureRM: 'wif-connect'
