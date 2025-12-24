@@ -27,6 +27,10 @@ steps:
 #     command: 'apply'
 #     environmentServiceNameAzureRM: 'First_service_connection'
 
+- task: tfsec@1
+  inputs:
+    version: 'v1.26.0'
+    dir: '.'
 
 - task: PowerShell@2
   inputs:
